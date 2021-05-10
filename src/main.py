@@ -9,3 +9,4 @@ from layer_operations import *
 
 clear_layers()
 clean_and_create()
+import_and_style()
