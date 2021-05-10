@@ -206,6 +206,55 @@ def create_suicides_unemployment_per_year():
         con.commit()
         cur.execute(f'drop table state_unemployment_{f_year}')
         con.commit()
+
+
+    for y in range(7, 11):
+        f_year_i = year(y)
+        f_year_f = year(y+1)
+
+        cur.execute(
+            f'''
+            create table state_suicide_unemployment_diff_{f_year_i}_{f_year_f} as
+                select *, ntile(3) over (order by unemployment_percent_diff) || "." || ntile(3) over (order by suicide_percent_diff) as bimode
+                from (
+                    select 
+                        state, 
+                        fips, 
+                        population_{f_year_i},
+                        population_{f_year_f},
+                        suicides_{f_year_i},
+                        suicides_{f_year_f},
+                        suicide_percent_{f_year_f}-suicide_percent_{f_year_i} as suicide_percent_diff,
+                        unemployment_percent_{f_year_f}-unemployment_percent_{f_year_i} as unemployment_percent_diff
+                    from (
+                        select * from (
+                            select 
+                                state, 
+                                fips, 
+                                population as population_{f_year_i}, 
+                                suicides as suicides_{f_year_i}, 
+                                suicide_percent as suicide_percent_{f_year_i},
+                                unemployment_percent as unemployment_percent_{f_year_i}
+                            from
+                                state_suicide_unemployment_{f_year_i}
+                            )
+                        join (
+                            select 
+                                state, 
+                                fips,
+                                population as population_{f_year_f}, 
+                                suicides as suicides_{f_year_f}, 
+                                suicide_percent as suicide_percent_{f_year_f},
+                                unemployment_percent as unemployment_percent_{f_year_f}
+                            from
+                                state_suicide_unemployment_{f_year_f}
+                        ) using (state)
+                    )
+                );
+            '''
+        )
+        con.commit()
+
     con.close()
 
 
@@ -255,6 +304,49 @@ def create_suicides_unemployment_geometry_per_year():
         cur.execute(f'drop table state_suicide_unemployment_{f_year}')
         con.commit()
 
+    for y in range(7, 11):
+        f_year_i = year(y)
+        f_year_f = year(y+1)
+
+        cur.execute(
+            f'''
+            create table state_suicide_unemployment_diff_geo_{f_year_i}_{f_year_f} as
+                select * from (
+                    select 
+                        ogc_fid, 
+                        GEOMETRY, 
+                        fid, state_name as state 
+                    from 
+                        states_geo.states_geometry
+                ) join (
+                    select 
+                        state, 
+                        fips, 
+                        population_{f_year_i},
+                        population_{f_year_f},
+                        suicides_{f_year_i},
+                        suicides_{f_year_f},
+                        suicide_percent_diff,
+                        unemployment_percent_diff,
+                        bimode
+                    from 
+                        state_suicide_unemployment_diff_{f_year_i}_{f_year_f}
+                ) using(state);
+            '''
+        )
+        con.commit()
+
+        cur.execute(
+            f'''
+            insert into geometry_columns(f_table_name, f_geometry_column, geometry_type, coord_dimension, geometry_format)
+            values("state_suicide_unemployment_diff_geo_{f_year_i}_{f_year_f}", "GEOMETRY", 6, 2, "WKB");
+            '''
+        )
+        con.commit()
+
+        cur.execute(f'drop table state_suicide_unemployment_diff_{f_year_i}_{f_year_f}')
+        con.commit()
+        
     con.close()
 
 
