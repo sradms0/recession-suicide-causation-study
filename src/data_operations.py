@@ -185,19 +185,22 @@ def create_suicides_unemployment_per_year():
         cur.execute(
             f'''
             create table state_suicide_unemployment_{f_year} as
-                select state, fips, population_20{f_year} as population, suicides, suicide_percent, unemployment_percent_20{f_year} as unemployment_percent,
-                100*(suicide_percent/unemployment_percent_20{f_year}) as suicide_unemployment_ratio_percent
+                select *, ntile(3) over (order by unemployment_percent) || "." || ntile(3) over (order by suicide_percent) as bimode
                 from (
-                    select * from (
-                        select state, fips, population_20{f_year}, suicides, suicide_percent
-                        from 
-                        state_pop_sui.state_pop_suicides_{f_year}
+                    select state, fips, population_20{f_year} as population, suicides, suicide_percent, unemployment_percent_20{f_year} as unemployment_percent,
+                    100*(suicide_percent/unemployment_percent_20{f_year}) as suicide_unemployment_ratio_percent
+                    from (
+                        select * from (
+                            select state, fips, population_20{f_year}, suicides, suicide_percent
+                            from 
+                            state_pop_sui.state_pop_suicides_{f_year}
+                        )
+                        join (
+                            select state, unemployment_percent_20{f_year} from state_unemployment_{f_year}
+                        ) 
+                        using (state)
                     )
-                    join (
-                        select state, unemployment_percent_20{f_year} from state_unemployment_{f_year}
-                    ) 
-                    using (state)
-                );
+                ) order by state;
             '''
         )
         con.commit()
@@ -233,8 +236,8 @@ def create_suicides_unemployment_geometry_per_year():
                 select * from (
                     select ogc_fid, GEOMETRY, fid, state_name as state from states_geo.states_geometry
                 ) join (
-                    select state, fips, population, suicides, suicide_percent, 
-                           unemployment_percent, suicide_unemployment_ratio_percent
+                    select state, fips, population, suicides, suicide_percent,
+                           unemployment_percent, suicide_unemployment_ratio_percent, bimode
                     from state_suicide_unemployment_{f_year}
                 ) using(state);
             '''
