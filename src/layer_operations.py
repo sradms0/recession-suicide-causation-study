@@ -26,16 +26,25 @@ def import_geo_layers():
 
     iface.mainWindow().blockSignals(True)
 
-    path = f"{PATHS['MODIFIED_DATA']}/db"
-    # layer = iface.addVectorLayer(f'{path}/state_suicides_unemployment_geometry.db', '', 'ogr')
-    iface.addVectorLayer(f'{path}/state_suicides_unemployment_geometry.db', '', 'ogr')
-    iface.addVectorLayer(f'{path}/oregon_counties_suicides_unemployment_geometry.db', '', 'ogr')
-    states_and_counties_unemp_sui_geo_layers = get_geo_layers(QgsProject.instance().mapLayers())
+    ROOT = PATHS['MODIFIED_DATA']
+    DB_PATH = f'{ROOT}/db'
+    FINAL_SHP_PATH = f'{ROOT}/shp/final'
+
+    iface.addVectorLayer(f'{DB_PATH}/state_suicides_unemployment_geometry.db', '', 'ogr')
+    iface.addVectorLayer(f'{DB_PATH}/oregon_counties_suicides_unemployment_geometry.db', '', 'ogr')
+    states_and_counties_unemp_sui_db_geo_layers = get_geo_layers(QgsProject.instance().mapLayers())
     
-    for layer in states_and_counties_unemp_sui_geo_layers:
-        crs = layer.crs()
+    for db_layer in states_and_counties_unemp_sui_db_geo_layers:
+        final_shp_name = f'{FINAL_SHP_PATH}/{db_layer.name()}.shp'
+        QgsVectorFileWriter.writeAsVectorFormat(db_layer,final_shp_name,"utf-8", driverName="ESRI Shapefile")
+        QgsProject.instance().removeMapLayer(db_layer)
+
+        final_shp_layer = iface.addVectorLayer(final_shp_name, '', 'ogr')
+        curr_final_shp_layer_name = final_shp_layer.name()
+        final_shp_layer.setName(curr_final_shp_layer_name.split(' ')[1])
+        crs = final_shp_layer.crs()
         crs.createFromId(4326)
-        layer.setCrs(crs)
+        final_shp_layer.setCrs(crs)
         
     iface.mainWindow().blockSignals(False)
 
