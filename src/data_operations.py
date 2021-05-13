@@ -258,6 +258,108 @@ def create_suicides_unemployment_per_year():
     con.close()
 
 
+def create_oregon_county_suicides_unemployment_per_year():
+    print('combining oregon county population, suicide, unemployment per year')
+
+    ROOT = PATHS['MODIFIED_DATA']
+    CSV_ROOT = f'{ROOT}/csv'
+    DB_ROOT = f'{ROOT}/db'
+
+    OR_COUNT_UNEMP_CSV_SOURCE = f'{CSV_ROOT}/unemployment/oregon_07_11.csv'
+    OR_COUNT_SUI_CSV_SOURCE = f'{CSV_ROOT}/deaths/oregon_07_11.csv'
+
+    OR_COUNTIES_DB_SOURCE = f"{DB_ROOT}/oregon_counties_suicides_unemployment.db"
+
+    oregon_county_death_data = pd.read_csv(OR_COUNT_SUI_CSV_SOURCE, converters={"County": lambda c: c.split(',')[0]})
+    oregon_county_unemployment_data = pd.read_csv(OR_COUNT_UNEMP_CSV_SOURCE)
+
+    conn = sqlite3.connect(OR_COUNTIES_DB_SOURCE)
+    oregon_county_death_data.to_sql('all_deaths', conn, if_exists='replace', index=False)
+    oregon_county_unemployment_data.to_sql('all_unemployment', conn, if_exists='replace', index=False)
+
+    cur = conn.cursor()
+
+    for y in range(7,12):
+        f_year = year(y)
+
+        cur.execute(
+            f'''
+            create table county_suicide_unemployment_{f_year} as
+            select *, ntile(3) over (order by unemployment_percent_{f_year}) || "." || ntile(3) over (order by suicide_percent_{f_year}) as bimode
+            from (
+                select *, 100*(cast(suicides_{f_year} as double)/population_{f_year}) as suicide_percent_{f_year} from (
+                    select * from (
+                        select
+                            County as county,
+                            "County Code" as geoid20,
+                            Year as year,
+                            "Injury Intent" as injury_intent,
+                            Deaths as suicides_{f_year},
+                            Population as population_{f_year}
+                        from 
+                            all_deaths 
+                        where 
+                            "Injury Intent"="Suicide" and "Year"=20{f_year}
+                    )
+                ) join (
+                    select 
+                        County as county,
+                        "Annual 20{f_year}" as unemployment_percent_{f_year}
+                    from 
+                        all_unemployment 
+                ) using (county)
+            )
+            '''
+        )
+        conn.commit()
+
+    for y in range(7, 11):
+        f_year_i = year(y)
+        f_year_f = year(y+1)
+
+        cur.execute(
+            f'''
+            create table county_suicide_unemployment_diff_{f_year_i}_{f_year_f} as
+                select *, ntile(3) over (order by unemployment_percent_diff) || "." || ntile(3) over (order by suicide_percent_diff) as bimode
+                from (
+                    select 
+                        county,
+                        geoid20,
+                        suicides_{f_year_i},
+                        suicides_{f_year_f},
+                        suicide_percent_{f_year_f}-suicide_percent_{f_year_i} as suicide_percent_diff,
+                        unemployment_percent_{f_year_f}-unemployment_percent_{f_year_i} as unemployment_percent_diff
+                    from (
+                        select * from (
+                            select 
+                                county, 
+                                geoid20,
+                                population_{f_year_i}, 
+                                suicides_{f_year_i}, 
+                                suicide_percent_{f_year_i},
+                                unemployment_percent_{f_year_i}
+                            from
+                                county_suicide_unemployment_{f_year_i}
+                            )
+                        join (
+                            select 
+                                county, 
+                                geoid20,
+                                population_{f_year_f}, 
+                                suicides_{f_year_f}, 
+                                suicide_percent_{f_year_f},
+                                unemployment_percent_{f_year_f}
+                            from
+                                county_suicide_unemployment_{f_year_f}
+                        ) using (county)
+                    )
+                );
+            '''
+        )
+        conn.commit()
+    conn.close()
+
+
 def create_suicides_unemployment_geometry_per_year():
     print('creating geomtetry/unemployment/population/suicide tables per year')
 
@@ -350,13 +452,150 @@ def create_suicides_unemployment_geometry_per_year():
     con.close()
 
 
+def create_oregon_suicides_unemployment_geometry_per_year():
+    print('creating oregon geomtetry/unemployment/population/suicide tables per year')
+
+    DB_ROOT = f"{PATHS['MODIFIED_DATA']}/db"
+    OR_COUNT_GEO_DB_SOURCE = f'{DB_ROOT}/oregon_counties_geometry.db'
+    OR_UNEMP_SUI_DB_SOURCE = f'{DB_ROOT}/oregon_counties_suicides_unemployment.db'
+    OR_UNEMP_SUI_GEO_DB_SOURCE = f'{DB_ROOT}/oregon_counties_suicides_unemployment_geometry.db'
+    copy(OR_UNEMP_SUI_DB_SOURCE, OR_UNEMP_SUI_GEO_DB_SOURCE)
+
+    con = sqlite3.connect(OR_UNEMP_SUI_GEO_DB_SOURCE)
+    con.execute("attach database'"+OR_COUNT_GEO_DB_SOURCE+"' as counties_geo;")
+    cur = con.cursor()
+
+    cur.execute('create table geometry_columns as select * from counties_geo.geometry_columns;')
+    con.commit()
+    cur.execute('delete from  geometry_columns where f_table_name = "oregon_county"');
+    con.commit()
+
+    for y in range(7, 12):
+        f_year = year(y)
+        print(f'--> oregon counties unemployment/population/suicide totals for year: {f_year}')
+        cur.execute(
+            f'''
+            create table county_suicide_unemployment_geo_{f_year} as
+                select * from (
+                    select
+                        ogc_fid, 
+                        GEOMETRY,
+                        statefp20, 
+                        countyfp20, 
+                        countyns20, 
+                        geoid20, 
+                        name20, 
+                        namelsad20, 
+                        lsad20, 
+                        classfp20, 
+                        mtfcc20, 
+                        csafp20, 
+                        cbsafp20, 
+                        metdivfp20, 
+                        funcstat20, 
+                        aland20, 
+                        awater20, 
+                        intptlat20, 
+                        intptlon20
+                    from 
+                        counties_geo.oregon_county
+                ) 
+                join (
+                    select county, 
+                        geoid20, 
+                        year, 
+                        suicides_{f_year}, 
+                        population_{f_year}, 
+                        unemployment_percent_{f_year}, 
+                        suicide_percent_{f_year}, 
+                        bimode
+                    from 
+                        county_suicide_unemployment_{f_year}
+                ) using(geoid20);
+            '''
+        )
+        con.commit()
+
+        cur.execute(
+            f'''
+            insert into geometry_columns(f_table_name, f_geometry_column, geometry_type, coord_dimension, geometry_format)
+            values("county_suicide_unemployment_geo_{f_year}", "GEOMETRY", 6, 2, "WKB");
+            '''
+        )
+        con.commit()
+
+    for y in range(7, 11):
+        f_year_i = year(y)
+        f_year_f = year(y+1)
+
+        cur.execute(
+            f'''
+            create table county_suicide_unemployment_diff_geo_{f_year_i}_{f_year_f} as
+                select * from (
+                    select 
+                        ogc_fid, 
+                        GEOMETRY,
+                        statefp20, 
+                        countyfp20, 
+                        countyns20, 
+                        geoid20, 
+                        name20, 
+                        namelsad20, 
+                        lsad20, 
+                        classfp20, 
+                        mtfcc20, 
+                        csafp20, 
+                        cbsafp20, 
+                        metdivfp20, 
+                        funcstat20, 
+                        aland20, 
+                        awater20, 
+                        intptlat20, 
+                        intptlon20
+                    from 
+                        counties_geo.oregon_county
+                ) join (
+                    select 
+                        county,
+                        geoid20,
+                        suicides_{f_year_i},
+                        suicides_{f_year_f},
+                        suicide_percent_diff,
+                        unemployment_percent_diff,
+                        bimode
+                    from 
+                        county_suicide_unemployment_diff_{f_year_i}_{f_year_f}
+                ) using(geoid20);
+            '''
+        )
+        con.commit()
+
+        cur.execute(
+            f'''
+            insert into geometry_columns(f_table_name, f_geometry_column, geometry_type, coord_dimension, geometry_format)
+            values("county_suicide_unemployment_diff_geo_{f_year_i}_{f_year_f}", "GEOMETRY", 6, 2, "WKB");
+            '''
+        )
+        con.commit()
+
+        cur.execute(f'drop table county_suicide_unemployment_diff_{f_year_i}_{f_year_f}')
+        con.commit()
+        
+    con.close()
+
+
+
 def clean_and_create():
     copy_original_data()
     create_populations_per_year()
     create_deaths_per_year()
     create_populations_deaths_per_year()
     create_unemployment_per_year()
+
     create_suicides_unemployment_per_year()
     create_suicides_unemployment_geometry_per_year()
+
+    create_oregon_county_suicides_unemployment_per_year()
+    create_oregon_suicides_unemployment_geometry_per_year()
 
 if __name__ != '__main__': pass

@@ -27,10 +27,12 @@ def import_geo_layers():
     iface.mainWindow().blockSignals(True)
 
     path = f"{PATHS['MODIFIED_DATA']}/db"
-    layer = iface.addVectorLayer(f'{path}/state_suicides_unemployment_geometry.db', '', 'ogr')
-    state_unemp_sui_geo_layers = get_geo_layers(QgsProject.instance().mapLayers())
+    # layer = iface.addVectorLayer(f'{path}/state_suicides_unemployment_geometry.db', '', 'ogr')
+    iface.addVectorLayer(f'{path}/state_suicides_unemployment_geometry.db', '', 'ogr')
+    iface.addVectorLayer(f'{path}/oregon_counties_suicides_unemployment_geometry.db', '', 'ogr')
+    states_and_counties_unemp_sui_geo_layers = get_geo_layers(QgsProject.instance().mapLayers())
     
-    for layer in state_unemp_sui_geo_layers:
+    for layer in states_and_counties_unemp_sui_geo_layers:
         crs = layer.crs()
         crs.createFromId(4326)
         layer.setCrs(crs)
@@ -53,8 +55,9 @@ def style_geo_layers():
         '3.3': '#007fc4'
     }
 
-    state_unemp_sui_geo_layers = get_geo_layers(QgsProject.instance().mapLayers())
-    for layer in state_unemp_sui_geo_layers:
+    states_and_counties_unemp_sui_geo_layers = get_geo_layers(QgsProject.instance().mapLayers())
+    for layer in states_and_counties_unemp_sui_geo_layers:
+        print(layer)
         categories = []
 
         for bimode, color in COLORS.items():
